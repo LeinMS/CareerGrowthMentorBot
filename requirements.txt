@@ -1,0 +1,8 @@
+django==4.2.4
+python-telegram-bot==13.15
+langchain==0.0.268
+openai==0.27.6
+python-dotenv==1.0.0
+psycopg2-binary
+gunicorn==21.2.0
+telebot==0.0.5
