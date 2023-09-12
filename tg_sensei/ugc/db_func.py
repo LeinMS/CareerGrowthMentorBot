@@ -1,5 +1,6 @@
-from ugc.models import Profile, Message, UserPrompt
-
+from ugc.models import Profile, Message, UserPrompt, DeviceLocation
+from datetime import datetime
+import pytz
 
 class ProfileInterface:
     '''Interface for Profile operations.'''
@@ -142,3 +143,48 @@ class UserPromptInterface:
             return True
         except UserPrompt.DoesNotExist:
             return False
+
+
+class DeviceLocationInterface:
+    '''Interface for DeviceLocation operations.'''
+
+    @staticmethod
+    def create_device_location(profile, lat, lng, timezone, utc_offset):
+        '''Создает новую запись о местоположении устройства в базе данных.'''
+        device_location = DeviceLocation(profile=profile,
+                                         device_type='Mobile',
+                                         latitude=lat,
+                                         longitude=lng,
+                                         timezone=timezone,
+                                         utc_offset=utc_offset)
+        device_location.save()
+        return device_location
+
+
+    @staticmethod
+    def set_device_type_desktop(profile, utc_offset=None):
+        '''Устанавливает тип устройства "desktop" и опциональный смещение времени для текущего профиля.'''
+        device_location = DeviceLocation(profile=profile,
+                                         device_type='Desktop',
+                                         latitude=None,
+                                         longitude=None,
+                                         timezone=None,
+                                         utc_offset=utc_offset if utc_offset is not None else None)
+        device_location.save()
+
+    @staticmethod
+    def get_last_utc_offset_for_profile(profile):
+        '''Возвращает последний сохраненный utc_offset для указанного профиля.'''
+        try:
+            device_location = DeviceLocation.objects.filter(profile=profile).latest('created_at')
+            return device_location.utc_offset
+        except DeviceLocation.DoesNotExist:
+            return None
+
+    @staticmethod
+    def get_user_time(utc_offset):
+        utc_now = datetime.now(pytz.utc)
+        user_timezone = pytz.FixedOffset(utc_offset * 60)
+        user_time = utc_now.astimezone(user_timezone)
+        return user_time.hour
+

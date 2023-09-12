@@ -2,7 +2,7 @@ from django.contrib import admin
 
 # Register your models here.
 from .forms import ProfileForm
-from .models import *
+from .models import Profile, Message, UserPrompt, DeviceLocation
 
 
 @admin.register(Profile)
@@ -32,4 +32,14 @@ class UserPromptAdmin(admin.ModelAdmin):
     # def get_queryset(self, request):
     #     return
 
+
+@admin.register(DeviceLocation)
+class DeviceLocationAdmin(admin.ModelAdmin):
+    list_display = ('id',
+                    'profile',
+                    'device_type',
+                    'latitude',
+                    'longitude',
+                    'timezone',
+                    'utc_offset')
 

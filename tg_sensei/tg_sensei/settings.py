@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'ugc.apps.UgcConfig',
+    # 'django_extensions',
 ]
 
 MIDDLEWARE = [
@@ -170,4 +171,3 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 TOKEN=os.getenv('TOKEN')
 
 OPENAI_API_KEY=os.getenv('OPENAI_API_KEY')
-

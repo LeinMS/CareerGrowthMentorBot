@@ -68,7 +68,7 @@ curl -X POST \
 ### Request
 ```
  Invoke-WebRequest `
- -Uri 'https://api.telegram.org/bot6612833314:AAEGmJmG0C1GSf327Xnt4Muke1beWL0kfXo/setWebhook' `
+ -Uri 'https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook' `
  -Method Post `
  -Body @{url='https://tgsensei.evolwe.ai/telegram_webhook/'}                                                          
 ```
@@ -92,6 +92,20 @@ Links             : {}
 ParsedHtml        : mshtml.HTMLDocumentClass
 RawContentLength  : 57
 ```
+
+### Проверить установлен ли webhook
+
+#### Windows:
+```
+Invoke-WebRequest -Uri "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
+```
+
+#### Для Linux и macOS (Bash):
+```
+curl https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo
+```
+
+
 
 ## Additional Information
 - **Setup Instructions**: How to get the bot running locally, necessary environment variables, etc.

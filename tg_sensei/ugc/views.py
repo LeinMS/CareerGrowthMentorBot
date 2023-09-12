@@ -4,16 +4,18 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.views import View
 
+import pytz
+from apscheduler.schedulers.background import BackgroundScheduler
+
 import telebot
 from telebot import types
 import logging
-from ugc.db_func import ProfileInterface, MessageInterface
-from ugc.models import UserPrompt
+from ugc.db_func import ProfileInterface, MessageInterface, DeviceLocationInterface
+from ugc.models import UserPrompt, Profile
 from ugc.langchain_openai import get_conversation
 from django.conf import settings
 from ugc.questionaire import Questionare
 from ugc.Templates import default_user_template
-
 
 # Настроить логирование для вывода в stdout
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s]: %(message)s')
@@ -21,7 +23,37 @@ logger = logging.getLogger(__name__)
 logger.info("This message will be sent to CloudWatch Logs if ECS is configured with awslogs driver.")
 
 bot = telebot.TeleBot(settings.TOKEN)
-# print(bot)
+
+
+def send_checkin_messages():
+    profiles = Profile.objects.all()
+
+    for profile in profiles:
+        try:
+            utc_offset = DeviceLocationInterface.get_last_utc_offset_for_profile(profile=profile)
+            current_hour_in_user_timezone = DeviceLocationInterface.get_user_time(utc_offset)
+
+            if 13 >= current_hour_in_user_timezone >= 12:
+                try:
+                    bot.send_message(profile.external_id, "Hello!\nHow are you?\nLet's chat!")
+                    profile.is_active = True
+                    profile.save()
+                    logger.info(f'Successfully sent message to user {profile.name, profile.external_id}')
+                except Exception as e:
+                    profile.is_active = False
+                    profile.save()
+                    logger.error(f'Failed to send message to user {profile.name, profile.external_id}. Error: {str(e)}')
+            else:
+                logger.info(f'{profile.name, profile.external_id} is not in the right time for a message.')
+
+        except Exception as e:
+            logger.error(f'Error processing profile {profile.name, profile.external_id}. Error: {str(e)}')
+
+
+
+scheduler = BackgroundScheduler(timezone=pytz.utc)
+scheduler.add_job(send_checkin_messages, 'interval', hours=1)
+scheduler.start()
 
 
 @bot.message_handler(commands=['start'])
@@ -67,15 +99,14 @@ def get_bot_message(message):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class TelegramBotView(View):
-
     def post(self, request, *args, **kwargs):
+
         try:
             json_str = request.body.decode('UTF-8')
             update = telebot.types.Update.de_json(json_str)
             bot.process_new_updates([update])
             return JsonResponse({'status': 'ok'})
+
         except Exception as e:
             logger.error(f"Error processing update: {e}", exc_info=True)
             return JsonResponse({'status': 'error', 'message': str(e)})
-
-

@@ -1,5 +1,8 @@
 from telebot import types
-from ugc.db_func import ProfileInterface, UserPromptInterface
+from ugc.db_func import ProfileInterface, UserPromptInterface, DeviceLocationInterface
+from timezonefinder import TimezoneFinder
+import pytz
+from datetime import datetime
 
 
 class Questionare:
@@ -169,6 +172,12 @@ class Questionare:
                     ("Personal satisfaction", "Intrinsic satisfaction"),
                     ("Recognition and prestige", "Ambition, extrinsic motivation")
                 ]
+            },
+            {
+                'key': 'q16',
+                'text': "From which type of application are you communicating?",
+                'characteristic': None,
+                'options': [("Desktop", "Desktop"), ("Mobile", "Mobile")]
             }
         ]
 
@@ -184,6 +193,7 @@ class Questionare:
         self.question_data = {q['key']: [] for q in self.QUESTIONS}
 
     def ask_next_question(self):
+        """ Next question or stop """
         if self.current_question_idx < len(self.QUESTIONS):
             question = self.QUESTIONS[self.current_question_idx]
             markup = None
@@ -208,12 +218,111 @@ class Questionare:
             # save prompt
             self.save_user_prompt(formatted_text)
 
+    def handle_desktop(self, message):
+        user_input = message.text
+
+        if user_input == "Skip":
+            utc_value = None
+
+        else:
+            utc_value = self.get_utf(message.text)
+
+        profile = self.db_action(ProfileInterface.get_or_create_profile,
+                                 external_id=message.chat.id,
+                                 name=message.from_user.username)
+
+        self.db_action(DeviceLocationInterface.set_device_type_desktop,
+                       profile=profile,
+                       utc_offset=utc_value)
+
+        self.current_question_idx += 1
+        self.ask_next_question()
+
+    def handle_mobile_location_permission(self, message):
+        if message.location:
+            lat = message.location.latitude
+            lng = message.location.longitude
+            try:
+                tf = TimezoneFinder()
+                tz_name = tf.timezone_at(lng=lng,
+                                         lat=lat)
+                if not tz_name:
+                    raise ValueError("Could not determine timezone")
+
+                timezone = pytz.timezone(tz_name)
+                utc_offset = timezone.utcoffset(datetime.utcnow()).total_seconds() / 3600
+
+                # Get user profile or create if not exists
+                profile = self.db_action(ProfileInterface.get_or_create_profile,
+                                         external_id=message.chat.id,
+                                         name=message.from_user.username)
+
+                # Save to the DeviceLocation. Assuming there's a method like 'create_device_location'.
+                # Modify as per your actual DB functions.
+                self.db_action(DeviceLocationInterface.create_device_location,
+                               profile=profile,
+                               lat=lat,
+                               lng=lng,
+                               timezone=tz_name,
+                               utc_offset=utc_offset)
+
+                self.bot.send_message(self.chat_id, f"Your timezone is: {tz_name}, UTC+{int(utc_offset)}")
+                self.current_question_idx += 1
+                self.ask_next_question()
+
+            except Exception as e:
+                self.bot.send_message(self.chat_id, "Oops! Something went wrong. Please try again.")
+                print(f"Error occurred while saving timezone: {e}")
+                self.ask_next_question() # ПРОВЕРИТЬ ЭТО !!!!
+
+        elif message.text == "No":
+            # Optionally save NULL data or do nothing, then move to the next question
+            self.current_question_idx += 1
+            self.ask_next_question()
+        else:
+            self.bot.send_message(self.chat_id, "Please select a valid option.")
+            self.ask_next_question()
+
     def handle_answer(self, message):
+        question = self.QUESTIONS[self.current_question_idx]
+
+        if question['key'] == 'q16':
+            try:
+                if message.text == "Desktop":
+                    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
+                    skip_button = types.KeyboardButton("Skip")
+                    markup.add(skip_button)
+
+                    msg = self.bot.send_message(self.chat_id,
+                                                "Please input your timezone (e.g. +3 or -5 or etc) or press 'Skip'.",
+                                                reply_markup=markup)
+                    self.bot.send_message(self.chat_id,
+                                          "If you don't know your own UTC then use [this site](https://time.is/en/UTC) to find out!",
+                                          parse_mode="Markdown")
+
+                    # Здесь мы регистрируем обработчик события, но не ждем его завершения
+                    self.bot.register_next_step_handler(msg, self.handle_desktop)
+                    return
+
+                elif message.text == "Mobile":
+                    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+                    item1 = types.KeyboardButton("Yes!", request_location=True)
+                    item2 = types.KeyboardButton("No")
+                    markup.add(item1, item2)
+                    txt = 'Would you like to share your location?'
+                    msg = self.bot.send_message(message.chat.id, txt, reply_markup=markup)
+                    self.bot.register_next_step_handler(msg, self.handle_mobile_location_permission)
+                    return
+
+            except Exception as e:
+                self.bot.send_message(self.chat_id, "Oops! Something went wrong. Please try again.")
+                print(f"just click on the button : {e}")
+                self.ask_next_question() # ПРОВЕРИТЬ ЭТО !!!!
+
         if self.prompt['Name'] is None:
             user_input = message.text
             self.prompt['Name'] = user_input
 
-        question = self.QUESTIONS[self.current_question_idx]
         if question['options']:
             options_dict = dict(question['options'])
 
@@ -222,9 +331,6 @@ class Questionare:
                 self.current_question_idx += 1
                 self.ask_next_question()
                 self.prompt[question['characteristic']].append(options_dict[message.text])
-                # print(self.prompt)
-                # print('----------------------------------------------------------------------')
-                # options_dict[message.text])
 
             else:
                 self.bot.send_message(self.chat_id, "Please select a valid option.")
@@ -253,17 +359,46 @@ class Questionare:
 
             user_custom_prompt = formatted_text
             self.bot.send_message(self.message.chat.id, "Attempting to save your prompt...")
-            p = ProfileInterface.get_or_create_profile(external_id=self.message.chat.id,
-                                                       name=self.message.from_user.username)
-            UserPromptInterface.create_user_prompt(profile=p,
-                                                   prompt=user_custom_prompt)
+
+            profile = self.db_action(ProfileInterface.get_or_create_profile,
+                                     external_id=self.message.chat.id,
+                                     name=self.message.from_user.username)
+
+            self.db_action(UserPromptInterface.create_user_prompt,
+                           profile=profile,
+                           prompt=user_custom_prompt)
+
             self.bot.send_message(self.message.chat.id, "Your prompt is saved successfully!")
+
         except Exception as e:
-            self.bot.send_message(self.message.chat.id,
-                                  "Oops! Something went wrong while saving your prompt. Please try again.")
+            self.bot.send_message(self.message.chat.id, "Oops! Something went wrong while saving your prompt. Please try again.")
             print(f"Error occurred while saving user prompt: {e}")
 
+    def get_utf(self, value):
+        # Если значение является строкой и начинается с "+", удаляем "+".
+        if isinstance(value, str) and value.startswith("+"):
+            value = value[1:]
 
+        # Пытаемся преобразовать value в число
+        try:
+            num = int(value)
+        except ValueError:
+            self.bot.send_message(self.message.chat.id, "Oops! It seems you've entered an invalid input. Please provide a whole number.")
+            return None
 
+        if -12 <= num <= 12:
+            return num
+        else:
+            self.bot.send_message(self.message.chat.id, "Sorry, the value you entered is out of range. Please provide a number between -12 and 12.")
+            return None
+
+    def db_action(self, func, *args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            self.bot.send_message(self.chat_id,
+                                  "Oops! An error occurred while accessing the database. Please try again.")
+            print(f"Database Error: {e}")
+            return None
 
 
