@@ -1,4 +1,4 @@
-FROM python:3.8-slim
+FROM public.ecr.aws/docker/library/python:3.9.17-slim
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends postgresql-client && \
