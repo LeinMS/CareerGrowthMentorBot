@@ -33,7 +33,7 @@ def send_checkin_messages():
             utc_offset = DeviceLocationInterface.get_last_utc_offset_for_profile(profile=profile)
             current_hour_in_user_timezone = DeviceLocationInterface.get_user_time(utc_offset)
 
-            if 13 >= current_hour_in_user_timezone >= 12:
+            if current_hour_in_user_timezone == 12:
                 try:
                     bot.send_message(profile.external_id, "Hello!\nHow are you?\nLet's chat!")
                     profile.is_active = True

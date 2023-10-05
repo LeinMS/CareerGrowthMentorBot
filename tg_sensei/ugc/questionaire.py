@@ -3,7 +3,9 @@ from ugc.db_func import ProfileInterface, UserPromptInterface, DeviceLocationInt
 from timezonefinder import TimezoneFinder
 import pytz
 from datetime import datetime
-
+from ugc.langchain_openai import get_conversation
+from ugc.Templates import default_user_template
+from ugc.models import UserPrompt
 
 class Questionare:
 
@@ -217,6 +219,8 @@ class Questionare:
             formatted_text = self.format_prompt()
             # save prompt
             self.save_user_prompt(formatted_text)
+            self.send_welcome_message_based_on_prompt(self.message)
+
 
     def handle_desktop(self, message):
         user_input = message.text
@@ -358,7 +362,7 @@ class Questionare:
         try:
 
             user_custom_prompt = formatted_text
-            self.bot.send_message(self.message.chat.id, "Attempting to save your prompt...")
+            # self.bot.send_message(self.message.chat.id, "Attempting to save your prompt...")
 
             profile = self.db_action(ProfileInterface.get_or_create_profile,
                                      external_id=self.message.chat.id,
@@ -368,7 +372,7 @@ class Questionare:
                            profile=profile,
                            prompt=user_custom_prompt)
 
-            self.bot.send_message(self.message.chat.id, "Your prompt is saved successfully!")
+            # self.bot.send_message(self.message.chat.id, "Your prompt is saved successfully!")
 
         except Exception as e:
             self.bot.send_message(self.message.chat.id, "Oops! Something went wrong while saving your prompt. Please try again.")
@@ -400,5 +404,24 @@ class Questionare:
                                   "Oops! An error occurred while accessing the database. Please try again.")
             print(f"Database Error: {e}")
             return None
+
+    def send_welcome_message_based_on_prompt(self, message):
+        # Получаем промпт пользователя
+        chat_id = message.chat.id
+        p = ProfileInterface.get_or_create_profile(external_id=chat_id,
+                                                   name=message.from_user.username)
+        try:
+            user_prompt_obj = UserPrompt.objects.filter(profile=p).latest('created_at')
+            user_custom_prompt = user_prompt_obj.prompt
+
+        except UserPrompt.DoesNotExist:
+            user_custom_prompt = default_user_template
+
+        # Генерируем приветственное сообщение на основе промпта пользователя
+        conversation = get_conversation(user_custom_prompt, p)
+        welcome_text = f'{conversation.predict(input="Hello!")}'
+
+        # Отправляем приветственное сообщение пользователю
+        self.bot.send_message(chat_id, welcome_text)
 
 
