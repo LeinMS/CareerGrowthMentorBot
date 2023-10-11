@@ -220,10 +220,10 @@ class Questionare:
             # save prompt
             self.save_user_prompt(formatted_text)
             # Бот отправляет первое сообщение
-            try:
-                self.send_welcome_message_based_on_prompt(self.message)
-            except Exception as e:
-                print(e)
+            # try:
+            #     self.send_welcome_message_based_on_prompt(self.message)
+            # except Exception as e:
+            #     print(e)
 
 
     def handle_desktop(self, message):
